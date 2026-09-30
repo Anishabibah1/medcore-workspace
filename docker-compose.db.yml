@@ -39,7 +39,7 @@ services:
         ipv4_address: 172.28.0.12
 
   pharmacy-db:
-    image: mongo:7.0-jammy
+    image: mongo:4.4
     container_name: medcore-pharmacy-db
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
