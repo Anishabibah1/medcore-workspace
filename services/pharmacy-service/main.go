@@ -24,13 +24,14 @@ type pharmacyServer struct {
 	db *mongo.Database
 }
 
-// =========================================================
-// gRPC: CheckDrugAvailability
-// =========================================================
+// CheckDrugAvailability mengecek ketersediaan obat.
 func (s *pharmacyServer) CheckDrugAvailability(
 	ctx context.Context,
 	req *pb.CheckDrugRequest,
 ) (*pb.CheckDrugResponse, error) {
+
+	// Simulasi latency untuk Step 3.4
+	time.Sleep(2 * time.Second)
 
 	// ResourceExhausted jika permintaan > 5000
 	if req.QuantityNeeded > 5000 {
@@ -63,7 +64,10 @@ func (s *pharmacyServer) CheckDrugAvailability(
 
 	// Error database lainnya
 	if err != nil {
-		log.Printf("[ERROR] Gagal mengambil data obat: %v", err)
+		log.Printf(
+			"[ERROR] Gagal mengambil data obat: %v",
+			err,
+		)
 
 		return nil, status.Errorf(
 			codes.Internal,
@@ -88,9 +92,7 @@ func (s *pharmacyServer) CheckDrugAvailability(
 	}, nil
 }
 
-// =========================================================
-// gRPC: ReservePrescriptionStock
-// =========================================================
+// ReservePrescriptionStock belum diimplementasikan.
 func (s *pharmacyServer) ReservePrescriptionStock(
 	ctx context.Context,
 	req *pb.ReserveStockRequest,
@@ -102,94 +104,102 @@ func (s *pharmacyServer) ReservePrescriptionStock(
 	)
 }
 
-// =========================================================
-// REST API: GET /api/v1/drugs/check
-// =========================================================
+// startRESTServer menjalankan REST API baseline.
 func startRESTServer(mongoClient *mongo.Client) {
 
-	http.HandleFunc("/api/v1/drugs/check", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc(
+		"/api/v1/drugs/check",
+		func(w http.ResponseWriter, r *http.Request) {
 
-		// Hanya menerima GET
-		if r.Method != http.MethodGet {
-			http.Error(
-				w,
-				"Method not allowed",
-				http.StatusMethodNotAllowed,
-			)
-			return
-		}
+			// Hanya menerima GET
+			if r.Method != http.MethodGet {
+				http.Error(
+					w,
+					"Method not allowed",
+					http.StatusMethodNotAllowed,
+				)
+				return
+			}
 
-		// Ambil drug_code dari query parameter
-		drugCode := r.URL.Query().Get("drug_code")
+			// Ambil drug_code dari query parameter
+			drugCode := r.URL.Query().Get("drug_code")
 
-		// Jika drug_code kosong
-		if drugCode == "" {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
+			// Jika drug_code kosong
+			if drugCode == "" {
+				w.Header().Set(
+					"Content-Type",
+					"application/json",
+				)
 
-			json.NewEncoder(w).Encode(map[string]string{
-				"error": "drug_code wajib diisi",
-			})
+				w.WriteHeader(http.StatusBadRequest)
 
-			return
-		}
+				json.NewEncoder(w).Encode(
+					map[string]string{
+						"error": "drug_code wajib diisi",
+					},
+				)
 
-		// Akses collection drugs
-		coll := mongoClient.
-			Database("medcore_pharmacy_db").
-			Collection("drugs")
+				return
+			}
 
-		// Struktur data obat
-		var drug struct {
-			DrugCode   string  `bson:"drug_code"`
-			Name       string  `bson:"name"`
-			UnitPrice  float64 `bson:"unit_price"`
-			TotalStock int32   `bson:"total_stock"`
-		}
+			// Akses collection drugs
+			coll := mongoClient.
+				Database("medcore_pharmacy_db").
+				Collection("drugs")
 
-		// Query MongoDB
-		err := coll.FindOne(
-			r.Context(),
-			bson.M{"drug_code": drugCode},
-		).Decode(&drug)
+			// Struktur data obat
+			var drug struct {
+				DrugCode   string  `bson:"drug_code"`
+				Name       string  `bson:"name"`
+				UnitPrice  float64 `bson:"unit_price"`
+				TotalStock int32   `bson:"total_stock"`
+			}
 
-		// Jika obat tidak ditemukan
-		if err != nil {
+			// Query MongoDB
+			err := coll.FindOne(
+				r.Context(),
+				bson.M{"drug_code": drugCode},
+			).Decode(&drug)
 
+			// Jika obat tidak ditemukan
+			if err != nil {
+				w.Header().Set(
+					"Content-Type",
+					"application/json",
+				)
+
+				w.WriteHeader(http.StatusNotFound)
+
+				json.NewEncoder(w).Encode(
+					map[string]string{
+						"error": "Obat tidak ditemukan",
+					},
+				)
+
+				return
+			}
+
+			// Response JSON
 			w.Header().Set(
 				"Content-Type",
 				"application/json",
 			)
 
-			w.WriteHeader(http.StatusNotFound)
-
 			json.NewEncoder(w).Encode(
-				map[string]string{
-					"error": "Obat tidak ditemukan",
+				map[string]interface{}{
+					"drug_code":     drug.DrugCode,
+					"is_available":  drug.TotalStock >= 10,
+					"current_stock": drug.TotalStock,
+					"unit_price":    drug.UnitPrice,
+					"message":       "Stok obat mencukupi",
 				},
 			)
+		},
+	)
 
-			return
-		}
-
-		// Response JSON
-		w.Header().Set(
-			"Content-Type",
-			"application/json",
-		)
-
-		json.NewEncoder(w).Encode(
-			map[string]interface{}{
-				"drug_code":     drug.DrugCode,
-				"is_available":  drug.TotalStock >= 10,
-				"current_stock": drug.TotalStock,
-				"unit_price":    drug.UnitPrice,
-				"message":       "Stok obat mencukupi",
-			},
-		)
-	})
-
-	log.Println("MedCore Pharmacy REST Baseline aktif pada port :8081")
+	log.Println(
+		"MedCore Pharmacy REST Baseline aktif pada port :8081",
+	)
 
 	// Jalankan REST Server
 	if err := http.ListenAndServe(":8081", nil); err != nil {
@@ -200,14 +210,7 @@ func startRESTServer(mongoClient *mongo.Client) {
 	}
 }
 
-// =========================================================
-// MAIN
-// =========================================================
 func main() {
-
-	// =========================================================
-	// 1. Koneksi MongoDB
-	// =========================================================
 
 	mongoURI := "mongodb://adm_pharmacy_svc:SecuredPassPharm2026!@localhost:27017/medcore_pharmacy_db?authSource=admin"
 
@@ -217,6 +220,7 @@ func main() {
 	)
 	defer cancel()
 
+	// Koneksi MongoDB
 	client, err := mongo.Connect(
 		ctx,
 		options.Client().ApplyURI(mongoURI),
@@ -241,17 +245,14 @@ func main() {
 
 	db := client.Database("medcore_pharmacy_db")
 
-	// =========================================================
-	// 2. Jalankan REST Server
-	// =========================================================
-
+	// Jalankan REST Server
 	go startRESTServer(client)
 
-	// =========================================================
-	// 3. Jalankan gRPC Server
-	// =========================================================
-
-	lis, err := net.Listen("tcp", ":50051")
+	// Jalankan gRPC Server
+	lis, err := net.Listen(
+		"tcp",
+		":50051",
+	)
 
 	if err != nil {
 		log.Fatalf(
